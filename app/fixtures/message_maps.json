@@ -1,0 +1,186 @@
+[
+  {
+    "model": "bot.messagemap",
+    "pk": 1,
+    "fields": {
+      "db_value": "Рестораны",
+      "alias": "доставка"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 2,
+    "fields": {
+      "db_value": "Родственники",
+      "alias": "родня"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 3,
+    "fields": {
+      "db_value": "Женщина",
+      "alias": "девушка"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 4,
+    "fields": {
+      "db_value": "Софт",
+      "alias": "прога"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 5,
+    "fields": {
+      "db_value": "Аптека",
+      "alias": "лекарства"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 6,
+    "fields": {
+      "db_value": "Аптека",
+      "alias": "таблетки"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 7,
+    "fields": {
+      "db_value": "Лечение",
+      "alias": "врач"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 8,
+    "fields": {
+      "db_value": "Городской транспорт",
+      "alias": "транспорт"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 9,
+    "fields": {
+      "db_value": "Городской транспорт",
+      "alias": "автобус"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 10,
+    "fields": {
+      "db_value": "Городской транспорт",
+      "alias": "метро"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 11,
+    "fields": {
+      "db_value": "Городской транспорт",
+      "alias": "трамвай"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 12,
+    "fields": {
+      "db_value": "Городской транспорт",
+      "alias": "троллейбус"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 13,
+    "fields": {
+      "db_value": "Одежда",
+      "alias": "шмот"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 14,
+    "fields": {
+      "db_value": "Одежда",
+      "alias": "шмотки"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 15,
+    "fields": {
+      "db_value": "Развлечения",
+      "alias": "театр"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 16,
+    "fields": {
+      "db_value": "Развлечения",
+      "alias": "музей"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 17,
+    "fields": {
+      "db_value": "Развлечения",
+      "alias": "выставка"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 18,
+    "fields": {
+      "db_value": "Развлечения",
+      "alias": "кино"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 19,
+    "fields": {
+      "db_value": "Домашние животные",
+      "alias": "кошка"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 20,
+    "fields": {
+      "db_value": "Домашние животные",
+      "alias": "собака"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 21,
+    "fields": {
+      "db_value": "Личная электроника",
+      "alias": "ноут"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 22,
+    "fields": {
+      "db_value": "Личная электроника",
+      "alias": "наушники"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 23,
+    "fields": {
+      "db_value": "Личная электроника",
+      "alias": "телефон"
+    }
+  }
+]

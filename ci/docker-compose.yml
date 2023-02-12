@@ -1,0 +1,47 @@
+version: '3.7'
+
+x-backend-env:
+  &backend-env
+    SYSTEM__DEBUG: ${SYSTEM__DEBUG}
+    POSTGRES_USER: ${POSTGRES_USER}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    POSTGRES_DB: ${POSTGRES_DB}
+
+services:
+  backend:
+    build:
+      context: ../
+      dockerfile: ci/Dockerfile
+    restart: always
+    tty: true
+    volumes:
+      - "../app/:/var/app"
+    ports:
+      - "${DJANGO_PORT}:8000"
+    depends_on:
+      - psql
+    environment:
+      <<: *backend-env
+
+  psql:
+    image: postgres:alpine
+    restart: always
+    shm_size: 1g
+    expose:
+      - 5432
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - "psql_data:/var/lib/postgresql/data"
+    command: [ "postgres", "-c", "log_statement=all", "-c", "max_connections=10000", "-c", "shared_buffers=24MB" ]
+    environment:
+      <<: *backend-env
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+volumes:
+  psql_data: {}
