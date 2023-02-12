@@ -1,0 +1,28 @@
+[
+  {
+    "model": "bot.account",
+    "pk": 1,
+    "fields": {
+      "title": "Сбербанк",
+      "currency_id": 1,
+      "amount": "1000"
+    }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 999,
+    "fields": {
+      "db_value": "Сбербанк",
+      "alias": "сбер"
+    }
+  },
+  {
+    "model": "bot.account",
+    "pk": 2,
+    "fields": {
+      "title": "Тинькофф",
+      "currency_id": 1,
+      "amount": "555.2"
+    }
+  }
+]

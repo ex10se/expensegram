@@ -1,7 +1,7 @@
 from typing import Any
 
 
-def force_int(val: Any, default: int = 0) -> int:
+def force_int(val: Any, default: Any = 0) -> int:
     # noinspection PyBroadException
     try:
         return int(val)
