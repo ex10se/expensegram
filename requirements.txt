@@ -1,6 +1,12 @@
+pip~=23.0
+wheel~=0.38.4
+setuptools~=67.2.0
+
 Django==4.1.6
 psycopg2-binary==2.9.5
 python-dotenv==0.21.1
+
+python-telegram-bot==20.1
 
 flake8==6.0.0
 coverage==7.1.0

@@ -8,5 +8,5 @@ set -e
 ./manage.py loaddata fixtures/currencies.json
 ./manage.py loaddata fixtures/message_maps.json
 
-# Запуск команды
-./manage.py runserver 0.0.0.0:8000
+# Запуск сервера
+./manage.py start_bot --token ${SYSTEM__TOKEN}
