@@ -9,11 +9,11 @@ class TestBot(TestCase):
     """Тесты функционала приложения bot."""
 
     fixtures = [
-        'categories.json',
-        'subcategories.json',
-        'currencies.json',
-        'message_maps.json',
-        'test.json',
+        'fixtures/categories.json',
+        'fixtures/subcategories.json',
+        'fixtures/currencies.json',
+        'fixtures/message_maps.json',
+        'fixtures/test.json',
     ]
 
     def setUp(self):

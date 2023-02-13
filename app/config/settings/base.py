@@ -1,5 +1,4 @@
 import os
-import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -7,7 +6,7 @@ from dotenv import load_dotenv
 from config.utils import force_int
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 load_dotenv(BASE_DIR.parent / 'ci' / '.env')
 
@@ -51,8 +50,7 @@ ROOT_URLCONF = 'config.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates']
-        ,
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -67,23 +65,19 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-db_host = 'psql'
-if 'test' in sys.argv:
-    db_host = 'localhost'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql_psycopg2',
         'NAME': os.environ.get('POSTGRES_DB'),
         'USER': os.environ.get('POSTGRES_USER'),
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
-        'HOST': db_host,
+        'HOST': 'psql',
         'PORT': os.environ.get('POSTGRES_PORT'),
         'CONN_MAX_AGE': None,
     }
-    ,
 }
 
-FIXTURE_DIRS = [str(BASE_DIR / 'fixtures')]
+FIXTURE_DIRS = [str(BASE_DIR)]
 
 AUTH_PASSWORD_VALIDATORS = [
     {
