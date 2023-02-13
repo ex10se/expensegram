@@ -1,6 +1,10 @@
 from typing import Optional, Union
 
+from decimal import Decimal
+from django.contrib.auth import get_user_model
 from django.db import models
+
+User = get_user_model()
 
 
 class Category(models.Model):
@@ -26,6 +30,7 @@ class Account(models.Model):
     title = models.CharField('Заголовок', max_length=255)
     currency = models.ForeignKey(Currency, related_name='accounts', on_delete=models.CASCADE)
     amount = models.DecimalField('Денежная сумма', max_digits=16, decimal_places=2)
+    user = models.ForeignKey(User, related_name='accounts', on_delete=models.CASCADE, null=True, blank=True)
 
     class Meta:
         unique_together = (
@@ -42,6 +47,14 @@ class Entry(models.Model):
     account = models.ForeignKey(Account, related_name='items', on_delete=models.CASCADE)
     date_created = models.DateTimeField('Дата записи', auto_now_add=True)
     date_updated = models.DateTimeField('Дата изменения записи', auto_now=True)
+
+    def save(self, *args, **kwargs):
+        """Перехват create для пересчета суммы на счете."""
+        if self.pk is None:
+            account = self.account
+            account.amount += self.amount
+            account.save(update_fields=['amount'])
+        return super().save(*args, **kwargs)
 
 
 class MessageMap(models.Model):
@@ -68,7 +81,8 @@ class MessageMap(models.Model):
 
 
 class Transfer(models.Model):
-    amount = models.DecimalField('Денежная сумма', max_digits=16, decimal_places=2)
+    amount_from = models.DecimalField('Сумма переведенная', max_digits=16, decimal_places=2, default=Decimal('0'))
+    amount_to = models.DecimalField('Сумма полученная', max_digits=16, decimal_places=2, default=Decimal('0'))
     account_from = models.ForeignKey(Account, related_name='transfers_from', on_delete=models.CASCADE)
     account_to = models.ForeignKey(Account, related_name='transfers_to', on_delete=models.CASCADE)
     date_created = models.DateTimeField('Дата записи', auto_now_add=True)
@@ -79,8 +93,8 @@ class Transfer(models.Model):
         if self.pk is None:
             account_from = self.account_from
             account_to = self.account_to
-            account_from.amount -= self.amount
-            account_to.amount += self.amount
+            account_from.amount -= self.amount_from
+            account_to.amount += self.amount_to
             account_from.save(update_fields=['amount'])
             account_to.save(update_fields=['amount'])
         return super().save(*args, **kwargs)

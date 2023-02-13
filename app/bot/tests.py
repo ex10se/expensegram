@@ -26,16 +26,13 @@ class TestBot(TestCase):
             account=Account.objects.get(title='Сбербанк'),
         )
 
-    def test_add_entry(self):
-        self.test_entry.save()
-        self.assertEqual(Entry.objects.count(), 1)
-
-    def test_delete_entry(self):
-        self.test_entry.save()
+    def test_add_delete_entry(self):
         self.assertEqual(self.test_entry.account.amount, Decimal('1000'))
+        self.test_entry.save()
+        self.assertEqual(self.test_entry.account.amount, Decimal('900'))
         self.test_entry.delete()
         self.assertEqual(Entry.objects.count(), 0)
-        self.assertEqual(self.test_entry.account.amount, Decimal('1100'))
+        self.assertEqual(self.test_entry.account.amount, Decimal('1000'))
 
     def test_message_map_find_value(self):
         instance = MessageMap.objects.get(alias='доставка').find()
@@ -51,7 +48,8 @@ class TestBot(TestCase):
         Transfer.objects.create(
             account_from=Account.objects.get(title='Тинькофф'),
             account_to=Account.objects.get(title='Сбербанк'),
-            amount=Decimal('500'),
+            amount_from=Decimal('500'),
+            amount_to=Decimal('500'),
         )
         self.assertEqual(Account.objects.get(title='Тинькофф').amount, Decimal('55.20'))
         self.assertEqual(Account.objects.get(title='Сбербанк').amount, Decimal('1500'))
