@@ -6,4 +6,4 @@ class BotConfig(AppConfig):
     name = 'bot'
 
     def ready(self):
-        import app.bot.signals  # noqa
+        import bot.signals  # noqa
