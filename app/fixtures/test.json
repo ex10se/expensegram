@@ -12,15 +12,15 @@
     "model": "bot.messagemap",
     "pk": 999,
     "fields": {
-      "db_value": "Сбербанк",
-      "alias": "сбер"
+      "db_value": "Тинькофф Блэк",
+      "alias": "блэк"
     }
   },
   {
     "model": "bot.account",
     "pk": 2,
     "fields": {
-      "title": "Тинькофф",
+      "title": "Тинькофф Блэк",
       "currency_id": 1,
       "amount": "555.2"
     }

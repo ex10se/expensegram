@@ -35,4 +35,4 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, user: BaseUs
         text += '\nВижу, ты впервые у нас! Сейчас я тебя зарегистрирую в системе.'
     else:
         text += '\nВижу, ты у нас уже был, рад тебя видеть вновь!'
-    await send_response(update, context, response=text)
+    await send_response(update=update, context=context, response=text)

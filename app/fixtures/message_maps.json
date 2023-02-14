@@ -182,5 +182,13 @@
       "db_value": "Личная электроника",
       "alias": "телефон"
     }
+  },
+  {
+    "model": "bot.messagemap",
+    "pk": 24,
+    "fields": {
+      "db_value": "Сбербанк",
+      "alias": "сбер"
+    }
   }
 ]

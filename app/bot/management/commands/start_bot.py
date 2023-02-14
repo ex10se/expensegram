@@ -49,7 +49,7 @@ class Command(BaseCommand):
             application.add_handler(CommandHandler(command_name, command_handler))
 
         application.add_handler(
-            MessageHandler(filters.TEXT & (~filters.COMMAND), handlers.handle_entry)
+            MessageHandler(filters.TEXT & (~filters.COMMAND), handlers.handle_message)
         )
 
         application.run_polling()
