@@ -1,3 +1,5 @@
+from typing import Optional
+
 from _decimal import Decimal
 from asgiref.sync import async_to_sync
 from django.test import TestCase
@@ -7,6 +9,8 @@ from telegram import (
     Message,
     Chat,
 )
+# noinspection PyProtectedMember
+from telegram._user import User as TGUser
 
 from bot.exceptions import (
     CantRecognizeAmountError,
@@ -14,7 +18,7 @@ from bot.exceptions import (
     CantFindCategoryError,
     TooBigAmountError,
 )
-from bot.handlers import handle_message
+from bot.handlers import handle_message, account_list
 from bot.handlers.entry import (
     amount_to_decimal,
     find_account,
@@ -52,12 +56,21 @@ class TestBot(TestCase):
             subcategory=Subcategory.objects.get(title='Рестораны'),
             account=Account.objects.get(title='Сбербанк'),
         )
+        self.tg_user = TGUser(
+            id=1, first_name='test_name', last_name='test_lname', username='test_user', is_bot=False,
+        )
 
     @staticmethod
-    def _get_update_obj(message: str) -> Update:
-        return Update(update_id=0, message=Message(
-            message_id=0, chat=Chat(id=0, type=''), date=timezone.now(), text=message,
-        ))
+    def _get_update_obj(message: str = '', user: Optional[TGUser] = None) -> Update:
+        msg_kwargs = {
+            'message_id': 0,
+            'chat': Chat(id=0, type=''),
+            'date': timezone.now(),
+            'text': message,
+        }
+        if user:
+            msg_kwargs['from_user'] = user
+        return Update(update_id=0, message=Message(**msg_kwargs))
 
     def test_add_delete_entry(self):
         self.assertEqual(self.test_entry.account.amount, Decimal('1000'))
@@ -132,3 +145,7 @@ class TestBot(TestCase):
     def test_resolve_desc_negative(self):
         with self.assertRaises(CantFindCategoryError):
             resolve_desc('qpwekjq')
+
+    def test_account_list(self):
+        send_args = async_to_sync(account_list)(update=self._get_update_obj(user=self.tg_user))
+        self.assertEqual(send_args['text'], '<b>1.</b> Сбербанк 1000.00 RUB\n<b>2.</b> Тинькофф Блэк 555.20 RUB\n')

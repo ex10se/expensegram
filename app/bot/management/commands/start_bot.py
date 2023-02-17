@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 COMMAND_HANDLERS = {
     "start": handlers.start,
-    # "help": handlers.start,
-    # "account_list": handlers.start,
+    "help": handlers.help_,
+    "account_list": handlers.account_list,
     # "account_add": handlers.start,
     # "account_delete": handlers.start,
     # "currency_list": handlers.start,

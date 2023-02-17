@@ -1,11 +1,20 @@
 [
   {
+    "model": "auth.user",
+    "pk": 1,
+    "fields": {
+      "username": "test_user",
+      "password": ""
+    }
+  },
+  {
     "model": "bot.account",
     "pk": 1,
     "fields": {
       "title": "Сбербанк",
       "currency_id": 1,
-      "amount": "1000"
+      "amount": "1000",
+      "user_id": 1
     }
   },
   {
@@ -22,7 +31,8 @@
     "fields": {
       "title": "Тинькофф Блэк",
       "currency_id": 1,
-      "amount": "555.2"
+      "amount": "555.2",
+      "user_id": 1
     }
   }
 ]

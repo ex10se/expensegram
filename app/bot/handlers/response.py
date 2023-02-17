@@ -34,7 +34,7 @@ def _get_chat_id(update: Update) -> int:
     return cast(Chat, update.effective_chat).id
 
 
-async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def done(update: Update, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
     await send_response(
         update=update,
         context=context,

@@ -37,3 +37,7 @@ class CantFindCategoryError(BaseError):
 
 class TooBigAmountError(BaseError):
     default_message = 'Введена слишком большая сумма (больше 10^14)'
+
+
+class UserAlreadyExistsError(BaseError):
+    default_message = 'Пользователь с таким ником уже есть в системе, и это не вы'
