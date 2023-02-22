@@ -1,38 +1,64 @@
 [
   {
-    "model": "auth.user",
-    "pk": 1,
-    "fields": {
-      "username": "test_user",
-      "password": ""
-    }
+    "table": "user",
+    "rows": [
+      {
+        "id": 1
+      }
+    ]
   },
   {
-    "model": "bot.account",
-    "pk": 1,
-    "fields": {
-      "title": "Сбербанк",
-      "currency_id": 1,
-      "amount": "1000",
-      "user_id": 1
-    }
+    "table": "category",
+    "rows": [
+      {
+        "id": 1,
+        "title": "Еда",
+        "user_id": 1
+      }
+    ]
   },
   {
-    "model": "bot.messagemap",
-    "pk": 999,
-    "fields": {
-      "db_value": "Тинькофф Блэк",
-      "alias": "блэк"
-    }
+    "table": "account",
+    "rows": [
+      {
+        "id": 1,
+        "title": "Сбербанк",
+        "amount": 1000.25,
+        "user_id": 1,
+        "currency": "руб"
+      },
+      {
+        "id": 2,
+        "title": "Тинькофф Блэк",
+        "amount": 60,
+        "user_id": 1,
+        "currency": "$"
+      }
+    ]
   },
   {
-    "model": "bot.account",
-    "pk": 2,
-    "fields": {
-      "title": "Тинькофф Блэк",
-      "currency_id": 1,
-      "amount": "555.2",
-      "user_id": 1
-    }
+    "table": "entry",
+    "rows": [
+      {
+        "id": 1,
+        "amount": 300,
+        "user_id": 1,
+        "category_id": 1,
+        "account_id": 1
+      }
+    ]
+  },
+  {
+    "table": "transfer",
+    "rows": [
+      {
+        "id": 1,
+        "amount_from": 500,
+        "amount_to": 6.76,
+        "account_from_id": 1,
+        "account_to_id": 2,
+        "user_id": 1
+      }
+    ]
   }
 ]

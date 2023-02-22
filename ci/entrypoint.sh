@@ -2,11 +2,8 @@
 
 set -e
 
-./manage.py migrate --noinput
-./manage.py loaddata fixtures/categories.json
-./manage.py loaddata fixtures/subcategories.json
-./manage.py loaddata fixtures/currencies.json
-./manage.py loaddata fixtures/message_maps.json
+# Накатывание миграций
+alembic upgrade head
 
 # Запуск сервера
-./manage.py start_bot --token ${SYSTEM__TOKEN}
+python3 start_bot.py

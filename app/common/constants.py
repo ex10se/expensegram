@@ -1,0 +1,8 @@
+COMMAND_START = 'start'
+COMMAND_CANCEL = 'cancel'
+COMMAND_HELP = 'help'
+COMMAND_ADD = 'add'
+COMMAND_ENTRIES = 'entries'
+COMMAND_TRANSFERS = 'transfers'
+COMMAND_ACCOUNTS = 'accounts'
+COMMAND_CATEGORIES = 'categories'
