@@ -1,6 +1,6 @@
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from telegram import Update, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, Message
 from telegram.ext import (
     ConversationHandler,
     CommandHandler,
@@ -11,6 +11,7 @@ from telegram.ext import (
 )
 
 from common import constants
+from common.constants import COMMAND_CANCEL
 from common.utils import (
     get_user_id,
     cancel,
@@ -18,6 +19,7 @@ from common.utils import (
     send_response,
     edit_last_message,
     delete_last_message,
+    close, sep_titles,
 )
 from db import CategoryModel
 from db.base import async_session
@@ -31,13 +33,24 @@ class Category:
     STATE__EDIT = 3
     STATE__DELETE_CONFIRM = 4
 
-    ACTION__ADD = 'add'
-    ACTION__CLOSE = 'close'
-    ACTION__DELETE = 'delete'
-    ACTION__BACK = 'back'
-    ACTION__EDIT = 'edit'
-    ACTION__HIDE = 'hide'
-    ACTION__ACTIVATE = 'show'
+    ACTION__ADD = 'Добавить'
+    ACTION__CLOSE = 'Закрыть'
+    ACTION__DELETE = 'Удалить'
+    ACTION__BACK = 'Назад'
+    ACTION__EDIT = 'Изменить'
+    ACTION__HIDE = 'Скрыть'
+    ACTION__ACTIVATE = 'Показать'
+
+    BAD_WORDS = [
+        ACTION__ADD,
+        ACTION__CLOSE,
+        ACTION__DELETE,
+        ACTION__BACK,
+        ACTION__EDIT,
+        ACTION__HIDE,
+        ACTION__ACTIVATE,
+        f'/{COMMAND_CANCEL}'
+    ]
 
     @classmethod
     def handler(cls):
@@ -46,14 +59,14 @@ class Category:
             entry_points=[CommandHandler(cls.categories.__name__, cls.categories)],
             states={
                 cls.STATE__CREATE: [
-                    MessageHandler(filters.Regex(r'^/cancel$'), cancel),
+                    MessageHandler(filters.Regex(rf'^/{COMMAND_CANCEL}$'), close),
                     MessageHandler(filters.TEXT, cls.create),
                 ],
                 cls.STATE__SHOW_CATEGORY_ACTIONS: [CallbackQueryHandler(cls.show_category_actions)],
                 cls.STATE__CHOOSE_CATEGORY_ACTION: [CallbackQueryHandler(cls.choose_category_action)],
                 cls.STATE__DELETE_CONFIRM: [CallbackQueryHandler(cls.delete_confirm)],
                 cls.STATE__EDIT: [
-                    MessageHandler(filters.Regex(r'^/cancel$'), cancel),
+                    MessageHandler(filters.Regex(rf'^/{COMMAND_CANCEL}$'), cancel),
                     MessageHandler(filters.TEXT, cls.edit),
                 ],
             },
@@ -73,11 +86,12 @@ class Category:
                 'У вас нет категорий, '
                 'введите название новой (можно несколько через запятую), '
                 'например:\n\n'
-                '    <code>Продукты</code>\n\n'
+                '    <code>Продукты</code>\n'
                 '    <code>Счета, Техника, Одежда</code>\n\n'
-                '/cancel для отмены'
+                '(/cancel для отмены)'
             )
-            await send_response(update=update, context=context, response=text)
+            msg = await send_response(update=update, context=context, response=text)
+            context.user_data['msg'] = msg
             return cls.STATE__CREATE
 
         categories = {category.id: category for category in categories}
@@ -97,18 +111,33 @@ class Category:
                 keyboard_map[-1].append(button)
 
         reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton('Добавить', callback_data=cls.ACTION__ADD)],
-            [InlineKeyboardButton('Закрыть', callback_data=cls.ACTION__CLOSE)],
+            [InlineKeyboardButton(cls.ACTION__ADD, callback_data=cls.ACTION__ADD)],
+            [InlineKeyboardButton(cls.ACTION__CLOSE, callback_data=cls.ACTION__CLOSE)],
             *keyboard_map,
         ])
-        await send_response(update=update, context=context, response='Выберите категорию', reply_markup=reply_markup)
+        msg = await send_response(
+            update=update, context=context, response='Выберите категорию', reply_markup=reply_markup,
+        )
+        context.user_data['msg'] = msg
         return cls.STATE__SHOW_CATEGORY_ACTIONS
 
     @classmethod
     async def create(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         user_id = await get_user_id(update, context)
 
-        titles = update.message.text.split(', ')
+        titles = sep_titles(update.message.text)
+        existing_titles_lower = []
+        if 'categories' in context.user_data:
+            existing_titles_lower = (c.title.lower() for c in context.user_data['categories'].values())
+
+        for title in titles:
+            if title.capitalize() in cls.BAD_WORDS:
+                await send_response(update=update, context=context, response='Такое название нельзя использовать')
+                return await cls.categories(update, context)
+            elif title.lower() in existing_titles_lower:
+                await send_response(update=update, context=context, response=f'Категория <b>{title}</b> уже есть')
+                return await cls.categories(update, context)
+
         categories = [CategoryModel(title=title, user_id=user_id) for title in titles]
 
         async with async_session() as session:
@@ -121,7 +150,6 @@ class Category:
                     update=update,
                     context=context,
                     response=f'Категория <b>{bad_category}</b> уже есть',
-                    reply_markup=ReplyKeyboardRemove()
                 )
 
         cls._flush_categories(context)
@@ -133,7 +161,7 @@ class Category:
 
         query_data = update.callback_query.data
         if query_data == cls.ACTION__CLOSE:
-            await delete_last_message(update)
+            await close(update, context)
             cls._flush_categories(context)
             return ConversationHandler.END
         if query_data == cls.ACTION__ADD:
@@ -164,20 +192,22 @@ class Category:
                 [
                     InlineKeyboardButton('Удалить', callback_data=cls.ACTION__DELETE),
                     hide_show_button,
-                    InlineKeyboardButton('Назад', callback_data=cls.ACTION__BACK),
+                    InlineKeyboardButton(cls.ACTION__BACK, callback_data=cls.ACTION__BACK),
                 ],
                 [
-                    InlineKeyboardButton('Закрыть', callback_data=cls.ACTION__CLOSE),
-                    InlineKeyboardButton('Изменить', callback_data=cls.ACTION__EDIT),
+                    InlineKeyboardButton(cls.ACTION__CLOSE, callback_data=cls.ACTION__CLOSE),
+                    InlineKeyboardButton(cls.ACTION__EDIT, callback_data=cls.ACTION__EDIT),
                 ],
             ],
         )
 
-        await edit_last_message(
+        msg = await edit_last_message(
             update=update,
-            text=f'Выберите действие над категорией {category_title}',
+            text=f'Выберите действие над категорией <b>{category_title}</b>',
             reply_markup=reply_markup,
         )
+        if isinstance(msg, Message):
+            context.user_data['msg'] = msg
         return cls.STATE__CHOOSE_CATEGORY_ACTION
 
     @classmethod
@@ -200,8 +230,8 @@ class Category:
             keyboard = [
                 [InlineKeyboardButton('Удалить вместе с записями', callback_data=cls.ACTION__DELETE)],
                 [
-                    InlineKeyboardButton('Закрыть', callback_data=cls.ACTION__CLOSE),
-                    InlineKeyboardButton('Назад', callback_data=cls.ACTION__BACK),
+                    InlineKeyboardButton(cls.ACTION__CLOSE, callback_data=cls.ACTION__CLOSE),
+                    InlineKeyboardButton(cls.ACTION__BACK, callback_data=cls.ACTION__BACK),
                 ],
             ]
             if category_disabled:
@@ -234,7 +264,7 @@ class Category:
         if query_data == cls.ACTION__EDIT:
             await edit_last_message(
                 update=update,
-                text=f'Введите новое название для категории {category_title} (/cancel для отмены):',
+                text=f'Введите новое название для категории <b>{category_title}</b> (/cancel для отмены):',
             )
             return cls.STATE__EDIT
 
@@ -310,12 +340,22 @@ class Category:
     async def edit(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         category_id = context.user_data['category_id']
         old_category_title = context.user_data['category_title']
-        new_category_title = update.message.text
-        if '/' in new_category_title:
-            await send_response(update=update, context=context, response='Символ / нельзя использовать в названии')
+        new_category_title = update.message.text.capitalize()
+        existing_titles_lower = (c.title.lower() for c in context.user_data['categories'].values())
+
+        if new_category_title.startswith('/'):
+            await send_response(update=update, context=context, response='Название нельзя начинать с /')
             return await cls.categories(update, context)
         elif new_category_title == old_category_title:
             await send_response(update=update, context=context, response='Название не отличается от предыдущего')
+            return await cls.categories(update, context)
+        elif new_category_title.capitalize() in cls.BAD_WORDS:
+            await send_response(update=update, context=context, response='Такое название нельзя использовать')
+            return await cls.categories(update, context)
+        elif new_category_title.lower() in existing_titles_lower:
+            await send_response(
+                update=update, context=context, response=f'Категория <b>{new_category_title}</b> уже есть',
+            )
             return await cls.categories(update, context)
 
         async with async_session() as session:

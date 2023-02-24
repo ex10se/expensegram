@@ -1,6 +1,6 @@
 import re
 from decimal import Decimal, InvalidOperation
-from typing import Any, Optional, cast
+from typing import Any, Optional, cast, Union
 
 import telegram
 from sqlalchemy import select
@@ -9,10 +9,7 @@ from telegram import (
     Update,
     Chat,
     ReplyKeyboardRemove,
-    ReplyKeyboardMarkup,
     Message,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
 )
 # noinspection PyProtectedMember
 from telegram._utils.types import ReplyMarkup
@@ -61,7 +58,7 @@ def force_int(num: Any, default=0) -> int:
         return default
 
 
-def force_decimal(value, default_value=Decimal('0')) -> Decimal:
+def force_decimal(value, default_value: Any = Decimal('0')) -> Union[Decimal, Any]:
     """
     Изменение типа данных для value на Decimal
     - Если в ходе вычислений произошла ошибка, то вернется дефолтное значение
@@ -88,15 +85,17 @@ def force_decimal(value, default_value=Decimal('0')) -> Decimal:
 async def delete_last_message(update: Update):
     if update.callback_query:
         await update.callback_query.delete_message()
+    else:
+        await update.message.delete()
 
 
 async def edit_last_message(update: Update, text: str, reply_markup: Optional[ReplyMarkup] = None):
     if update.callback_query:
-        await update.callback_query.edit_message_text(
+        return await update.callback_query.edit_message_text(
             text=text, parse_mode=telegram.constants.ParseMode.HTML, reply_markup=reply_markup,
         )
     if update.message:
-        await update.message.edit_text(
+        return await update.message.edit_text(
             text=text, parse_mode=telegram.constants.ParseMode.HTML, reply_markup=reply_markup,
         )
 
@@ -122,13 +121,38 @@ async def send_response(
     if reply_markup:
         args["reply_markup"] = reply_markup
 
-    await context.bot.send_message(**args)
+    return await context.bot.send_message(**args)
+
+
+async def close(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if 'msg' in context.user_data:
+        msg: Message = context.user_data['msg']
+        await msg.delete()
+        del context.user_data['msg']
+    return ConversationHandler.END
+
+
+def flush_user_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = get_user_id(update, context)
+    context.user_data = {'user_id': user_id}
+
+
+def user_amount_to_db_amount(user_amount: str) -> Decimal:
+    thousands_factor = user_amount.count('k') + user_amount.count('к')
+    amount_to_dec = force_decimal(user_amount.replace('k', '').replace('к', ''))
+    amount = amount_to_dec * 10 ** (3 * thousands_factor)
+    return amount
+
+
+def sep_titles(message: str) -> list:
+    return list(set(message.replace('/', '').replace('\n', ', ').strip().split(', ')))
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.callback_query:
         # удаляет последнее отправленное ботом сообщение, в т.ч. Inline Keyboard
         await update.callback_query.delete_message()
+    await close(update, context)
     await send_response(
         update=update,
         context=context,
@@ -136,18 +160,3 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         reply_markup=ReplyKeyboardRemove(),
     )
     return ConversationHandler.END
-
-
-CALLBACK_YES = 'yes'
-CALLBACK_NO = 'no'
-
-YES_NO_INLINE_MARKUP = InlineKeyboardMarkup([[
-    InlineKeyboardButton('Нет', callback_data=CALLBACK_NO),
-    InlineKeyboardButton('Да', callback_data=CALLBACK_YES),
-]])
-
-YES_NO_REPLY_MARKUP = ReplyKeyboardMarkup(
-    [['Нет', 'Да']],
-    one_time_keyboard=True,
-    input_field_placeholder='Выберите'
-)
