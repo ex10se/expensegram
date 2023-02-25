@@ -1,6 +1,6 @@
 import re
 from decimal import Decimal, InvalidOperation
-from typing import Any, Optional, cast, Union
+from typing import Any, Optional, cast, Union, List
 
 import telegram
 from sqlalchemy import select
@@ -132,10 +132,13 @@ async def close(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-async def flush_user_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def flush_user_data(update: Update, context: ContextTypes.DEFAULT_TYPE, exclude: List[str] = None) -> None:
     user_id = await get_user_id(update, context)
+    new_data = {'user_id': user_id}
+    if exclude:
+        new_data = {**new_data, **{k: v for k, v in context.user_data.items() if k in exclude}}
     context.user_data.clear()
-    context.user_data['user_id'] = user_id
+    context.user_data.update(new_data)
 
 
 def user_amount_to_db_amount(user_amount: str) -> Decimal:

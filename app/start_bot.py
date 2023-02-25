@@ -27,11 +27,9 @@ if __name__ == '__main__':
     # application.add_handler(CommandHandler(constants.COMMAND_CANCEL, cancel))
     application.add_handler(CommandHandler(constants.COMMAND_HELP, handlers.help_))
 
-    application.add_handler(handlers.AddConversation.handler())
-    # application.add_handler(CommandHandler(constants.COMMAND_ADD, handlers.AddConversation.add))
-
-    application.add_handler(handlers.Category.handler())
-    # application.add_handler(CommandHandler(constants.COMMAND_CATEGORIES, handlers.Category.categories))
+    application.add_handler(handlers.Add.handler())
+    application.add_handler(handlers.Categories.handler())
+    application.add_handler(handlers.Accounts.handler())
 
     # application.add_error_handler(error_handler)
 

@@ -9,7 +9,8 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
-    ContextTypes, filters,
+    ContextTypes,
+    filters,
 )
 
 from common import constants
@@ -20,26 +21,26 @@ from common.utils import (
     delete_last_message,
     get_user_id,
     user_amount_to_db_amount,
-    edit_last_message,
+    edit_last_message, flush_user_data,
 )
 from db import CategoryModel, AccountModel, EntryModel, TransferModel
 from db.base import async_session
 
 
-class AddConversation:
+class Add:
 
-    STAGE__CREATE_ENTRY__CATEGORY_ACCOUNT_CHECK = 0
-    STAGE__CREATE_ENTRY__CHOOSE_ACCOUNT = 1
-    STAGE__CREATE_ENTRY__ENTER_AMOUNT = 2
-    STAGE__CREATE_ENTRY = 3
-    STAGE__CREATE_TRANSFER__CHOOSE_ACCOUNT_TO = 4
-    STAGE__CREATE_TRANSFER__ENTER_AMOUNT = 5
-    STAGE__CREATE_TRANSFER = 6
+    STATE__CREATE_ENTRY__CATEGORY_ACCOUNT_CHECK = 0
+    STATE__CREATE_ENTRY__CHOOSE_ACCOUNT = 1
+    STATE__CREATE_ENTRY__ENTER_AMOUNT = 2
+    STATE__CREATE_ENTRY = 3
+    STATE__CREATE_TRANSFER__CHOOSE_ACCOUNT_TO = 4
+    STATE__CREATE_TRANSFER__ENTER_AMOUNT = 5
+    STATE__CREATE_TRANSFER = 6
 
     STAGE__CREATE_CATEGORY = 20
 
-    STAGE__CREATE_ACCOUNT__TITLE = 30
-    STAGE__CREATE_ACCOUNT = 31
+    STATE__CREATE_ACCOUNT__TITLE = 30
+    STATE__CREATE_ACCOUNT = 31
 
     ACTION__CLOSE = 'Закрыть'
     ACTION__EXPENSE = 'Расход'
@@ -61,13 +62,13 @@ class AddConversation:
         return ConversationHandler(
             entry_points=[CommandHandler(COMMAND_ADD, cls.entrypoint)],
             states={
-                cls.STAGE__CREATE_ENTRY__CATEGORY_ACCOUNT_CHECK: [
+                cls.STATE__CREATE_ENTRY__CATEGORY_ACCOUNT_CHECK: [
                     CallbackQueryHandler(cls.create_transfer__choose_account_from, pattern=cls.ACTION__TRANSFER),
                     CallbackQueryHandler(cls.create_entry__remember_entry_type),
                 ],
-                cls.STAGE__CREATE_ENTRY__CHOOSE_ACCOUNT: [CallbackQueryHandler(cls.create_entry__choose_account)],
-                cls.STAGE__CREATE_ENTRY__ENTER_AMOUNT: [CallbackQueryHandler(cls.create_entry__enter_amount)],
-                cls.STAGE__CREATE_ENTRY: [
+                cls.STATE__CREATE_ENTRY__CHOOSE_ACCOUNT: [CallbackQueryHandler(cls.create_entry__choose_account)],
+                cls.STATE__CREATE_ENTRY__ENTER_AMOUNT: [CallbackQueryHandler(cls.create_entry__enter_amount)],
+                cls.STATE__CREATE_ENTRY: [
                     MessageHandler(filters.Regex(rf'^/{COMMAND_CANCEL}$'), cancel),
                     MessageHandler(filters.TEXT, cls.create_entry),
                 ],
@@ -75,21 +76,21 @@ class AddConversation:
                     MessageHandler(filters.Regex(rf'^/{COMMAND_CANCEL}$'), cancel),
                     MessageHandler(filters.TEXT, cls.create_category),
                 ],
-                cls.STAGE__CREATE_ACCOUNT__TITLE: [
+                cls.STATE__CREATE_ACCOUNT__TITLE: [
                     MessageHandler(filters.Regex(rf'^/{COMMAND_CANCEL}$'), cancel),
                     MessageHandler(filters.TEXT, cls.create_account__title),
                 ],
-                cls.STAGE__CREATE_ACCOUNT: [
+                cls.STATE__CREATE_ACCOUNT: [
                     MessageHandler(filters.Regex(rf'^/{COMMAND_CANCEL}$'), cancel),
                     MessageHandler(filters.TEXT, cls.create_account),
                 ],
-                cls.STAGE__CREATE_TRANSFER__CHOOSE_ACCOUNT_TO: [
+                cls.STATE__CREATE_TRANSFER__CHOOSE_ACCOUNT_TO: [
                     CallbackQueryHandler(cls.create_transfer__choose_account_to),
                 ],
-                cls.STAGE__CREATE_TRANSFER__ENTER_AMOUNT: [
+                cls.STATE__CREATE_TRANSFER__ENTER_AMOUNT: [
                     CallbackQueryHandler(cls.create_transfer__enter_amount),
                 ],
-                cls.STAGE__CREATE_TRANSFER: [
+                cls.STATE__CREATE_TRANSFER: [
                     MessageHandler(filters.Regex(rf'^/{COMMAND_CANCEL}$'), cancel),
                     MessageHandler(filters.TEXT, cls.create_transfer),
                 ],
@@ -102,29 +103,26 @@ class AddConversation:
     async def entrypoint(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         user_id = await get_user_id(update, context)
 
-        upper_buttons = [
-            InlineKeyboardButton('Закрыть', callback_data=cls.ACTION__CLOSE),
-        ]
-
+        upper_buttons = [InlineKeyboardButton(cls.ACTION__CLOSE, callback_data=cls.ACTION__CLOSE)]
         async with async_session() as session:
             accounts_count = (
                 await session.execute(select(func.count()).select_from(AccountModel).filter_by(user_id=user_id))
             ).scalar_one()
         if accounts_count >= 2:
-            upper_buttons.insert(0, InlineKeyboardButton('Перевод', callback_data=cls.ACTION__TRANSFER))
+            upper_buttons.insert(0, InlineKeyboardButton(cls.ACTION__TRANSFER, callback_data=cls.ACTION__TRANSFER))
 
         reply_markup = InlineKeyboardMarkup([
             upper_buttons,
             [
-                InlineKeyboardButton('Доход', callback_data=cls.ACTION__INCOME),
-                InlineKeyboardButton('Расход', callback_data=cls.ACTION__EXPENSE),
+                InlineKeyboardButton(cls.ACTION__INCOME, callback_data=cls.ACTION__INCOME),
+                InlineKeyboardButton(cls.ACTION__EXPENSE, callback_data=cls.ACTION__EXPENSE),
             ],
         ])
         msg = await send_response(
             update=update, context=context, response='Выберите тип записи', reply_markup=reply_markup,
         )
         context.user_data['last_msg'] = msg
-        return cls.STAGE__CREATE_ENTRY__CATEGORY_ACCOUNT_CHECK
+        return cls.STATE__CREATE_ENTRY__CATEGORY_ACCOUNT_CHECK
 
     @classmethod
     async def create_entry__remember_entry_type(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -150,21 +148,23 @@ class AddConversation:
         if not accounts:
             text = 'У вас нет ни одного счёта, введите название нового (/cancel для отмены):'
             await edit_last_message(update=update, text=text)
-            return cls.STAGE__CREATE_ACCOUNT__TITLE
+            return cls.STATE__CREATE_ACCOUNT__TITLE
         accounts = {account.id: account for account in accounts}
         context.user_data['accounts'] = accounts
         # распределяем кнопки по 2 в ряд
         keyboard_map = []
         for i, account in enumerate(accounts.values()):
-            button = InlineKeyboardButton(account.title, callback_data=account.id)
+            button = InlineKeyboardButton(
+                f'{account.title} ({account.amount} {account.currency})', callback_data=account.id,
+            )
             if not i % 2:
                 keyboard_map.append([button])
             else:
                 keyboard_map[-1].append(button)
 
         reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton('Добавить', callback_data=cls.ACTION__ADD)],
-            [InlineKeyboardButton('Закрыть', callback_data=cls.ACTION__CLOSE)],
+            [InlineKeyboardButton(cls.ACTION__ADD, callback_data=cls.ACTION__ADD)],
+            [InlineKeyboardButton(cls.ACTION__CLOSE, callback_data=cls.ACTION__CLOSE)],
             *keyboard_map,
         ])
         if context.user_data['entry_type'] == cls.ACTION__INCOME:
@@ -181,7 +181,7 @@ class AddConversation:
         else:
             msg = await send_response(update=update, context=context, response=text, reply_markup=reply_markup)
             context.user_data['last_msg'] = msg
-        return cls.STAGE__CREATE_ENTRY__CHOOSE_ACCOUNT
+        return cls.STATE__CREATE_ENTRY__CHOOSE_ACCOUNT
 
     @classmethod
     async def create_entry__choose_account(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -202,7 +202,7 @@ class AddConversation:
                     context=context,
                     response=text,
                 )
-            return cls.STAGE__CREATE_ACCOUNT__TITLE
+            return cls.STATE__CREATE_ACCOUNT__TITLE
 
         context.user_data['account_id'] = int(query_data)
         return await cls.create_entry__choose_category(update, context)
@@ -230,10 +230,21 @@ class AddConversation:
                 keyboard_map[-1].append(button)
 
         reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton('Добавить', callback_data=cls.ACTION__ADD)],
-            [InlineKeyboardButton('Закрыть', callback_data=cls.ACTION__CLOSE)],
+            [InlineKeyboardButton(cls.ACTION__ADD, callback_data=cls.ACTION__ADD)],
+            [InlineKeyboardButton(cls.ACTION__CLOSE, callback_data=cls.ACTION__CLOSE)],
             *keyboard_map,
         ])
+
+        if 'accounts' not in context.user_data:
+            async with async_session() as session:
+                accounts = (await session.execute(select(AccountModel).filter_by(user_id=user_id))).scalars().all()
+            if not accounts:
+                text = 'У вас нет ни одного счёта, введите название нового (/cancel для отмены):'
+                await edit_last_message(update=update, text=text)
+                return cls.STATE__CREATE_ACCOUNT__TITLE
+            accounts = {account.id: account for account in accounts}
+            context.user_data['accounts'] = accounts
+
         account_title = context.user_data['accounts'][context.user_data['account_id']].title
         if context.user_data['entry_type'] == cls.ACTION__INCOME:
             entry_type_str = '<b>дохода</b> на счёт'
@@ -245,7 +256,7 @@ class AddConversation:
             del context.user_data['last_msg']
         else:
             await send_response(update=update, context=context, response=text, reply_markup=reply_markup)
-        return cls.STAGE__CREATE_ENTRY__ENTER_AMOUNT
+        return cls.STATE__CREATE_ENTRY__ENTER_AMOUNT
 
     @classmethod
     async def create_entry__enter_amount(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -270,10 +281,12 @@ class AddConversation:
             entry_type_str = 'дохода'
         else:
             entry_type_str = 'расхода'
+        account_title = context.user_data['accounts'][context.user_data['account_id']].title
         await edit_last_message(
             update=update,
             text=(
-                f'Введите сумму %s на <b>{category_title}</b> с заметкой, если нужно, по следующим примерам:\n\n'
+                f'Введите сумму %s на <b>{category_title}</b> со счёта <b>{account_title}</b> '
+                'с заметкой, если нужно, по следующим примерам:\n\n'
                 '    <code>100</code>\n'
                 '    <code>10k</code>\n'
                 '    <code>1,5к</code>\n'
@@ -283,7 +296,7 @@ class AddConversation:
             ),
         )
 
-        return cls.STAGE__CREATE_ENTRY
+        return cls.STATE__CREATE_ENTRY
 
     @classmethod
     async def create_entry(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -312,18 +325,33 @@ class AddConversation:
             context=context,
             response=(
                 f'Запись добавлена, теперь баланс счёта <b>{account.title}</b> '
-                f'составляет {account.amount} {account.currency}'
+                f'составляет {account.amount} {account.currency}.\n\n'
+                f'/{COMMAND_ADD} - повторить'
             ),
         )
         return ConversationHandler.END
 
     @classmethod
     async def create_account__title(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        account_title = update.message.text
-        context.user_data['account_title'] = account_title
+        title = update.message.text
+        existing_titles_lower = []
+        if 'accounts' in context.user_data:
+            existing_titles_lower = [c.title.lower() for c in context.user_data['accounts'].values()]
+
+        if title.startswith('/'):
+            await send_response(update=update, context=context, response='Название нельзя начинать с /')
+            return await cls.entrypoint(update, context)
+        elif title.capitalize() in cls.BAD_WORDS:
+            await send_response(update=update, context=context, response='Такое название нельзя использовать')
+            return await cls.entrypoint(update, context)
+        elif title.lower() in existing_titles_lower:
+            await send_response(update=update, context=context, response=f'Счёт <b>{title}</b> уже есть')
+            return await cls.entrypoint(update, context)
+
+        context.user_data['account_title'] = title
 
         text = (
-            f'Введите начальную сумму счёта <b>{account_title}</b> с обозначением валюты через пробел, например:\n\n'
+            f'Введите начальную сумму счёта <b>{title}</b> с обозначением валюты через пробел, например:\n\n'
             '   <code>0 руб</code>\n'
             '   <code>300 $</code>\n'
             '   <code>10к тенге</code>\n'
@@ -332,7 +360,7 @@ class AddConversation:
         )
         await send_response(update=update, context=context, response=text)
 
-        return cls.STAGE__CREATE_ACCOUNT
+        return cls.STATE__CREATE_ACCOUNT
 
     @classmethod
     async def create_account(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -361,17 +389,16 @@ class AddConversation:
                     context=context,
                     response=f'Счёт <b>{title}</b> уже есть',
                 )
+                await flush_user_data(update, context)
+                return await cls.entrypoint(update, context)
 
         context.user_data['account_id'] = account.id
-
-        del context.user_data['account_title']
+        await flush_user_data(update, context, exclude=['account_id', 'entry_type'])
         await send_response(
             update=update, context=context, response=(
                 f'Счёт <b>{account.title}</b> создан с начальной суммой в <b>{amount} {currency}</b>'
             ),
         )
-        if 'last_msg' in context.user_data:
-            del context.user_data['last_msg']
         return await cls.create_entry__choose_category(update, context)
 
     @classmethod
@@ -390,6 +417,8 @@ class AddConversation:
                     context=context,
                     response=f'Категория <b>{title}</b> уже есть',
                 )
+                await flush_user_data(update, context)
+                return await cls.entrypoint(update, context)
 
         await send_response(update=update, context=context, response=f'Категория <b>{category.title}</b> создана')
         return await cls.create_entry__category_account_check(update, context)
@@ -406,14 +435,16 @@ class AddConversation:
         # распределяем кнопки по 2 в ряд
         keyboard_map = []
         for i, account in enumerate(accounts.values()):
-            button = InlineKeyboardButton(account.title, callback_data=account.id)
+            button = InlineKeyboardButton(
+                f'{account.title} ({account.amount} {account.currency})', callback_data=account.id,
+            )
             if not i % 2:
                 keyboard_map.append([button])
             else:
                 keyboard_map[-1].append(button)
 
         reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton('Закрыть', callback_data=cls.ACTION__CLOSE)],
+            [InlineKeyboardButton(cls.ACTION__CLOSE, callback_data=cls.ACTION__CLOSE)],
             *keyboard_map,
         ])
         await edit_last_message(
@@ -421,7 +452,7 @@ class AddConversation:
             text='Выберите счёт списания',
             reply_markup=reply_markup,
         )
-        return cls.STAGE__CREATE_TRANSFER__CHOOSE_ACCOUNT_TO
+        return cls.STATE__CREATE_TRANSFER__CHOOSE_ACCOUNT_TO
 
     @classmethod
     async def create_transfer__choose_account_to(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -439,14 +470,16 @@ class AddConversation:
         # распределяем кнопки по 2 в ряд
         keyboard_map = []
         for i, account in enumerate(accounts.values()):
-            button = InlineKeyboardButton(account.title, callback_data=account.id)
+            button = InlineKeyboardButton(
+                f'{account.title} ({account.amount} {account.currency})', callback_data=account.id,
+            )
             if not i % 2:
                 keyboard_map.append([button])
             else:
                 keyboard_map[-1].append(button)
 
         reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton('Закрыть', callback_data=cls.ACTION__CLOSE)],
+            [InlineKeyboardButton(cls.ACTION__CLOSE, callback_data=cls.ACTION__CLOSE)],
             *keyboard_map,
         ])
         await edit_last_message(
@@ -454,7 +487,7 @@ class AddConversation:
             text='Выберите счёт зачисления',
             reply_markup=reply_markup,
         )
-        return cls.STAGE__CREATE_TRANSFER__ENTER_AMOUNT
+        return cls.STATE__CREATE_TRANSFER__ENTER_AMOUNT
 
     @classmethod
     async def create_transfer__enter_amount(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -482,7 +515,7 @@ class AddConversation:
             update=update,
             text=text,
         )
-        return cls.STAGE__CREATE_TRANSFER
+        return cls.STATE__CREATE_TRANSFER
 
     @classmethod
     async def create_transfer(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

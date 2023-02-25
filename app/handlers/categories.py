@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 
 from common import constants
-from common.constants import COMMAND_CANCEL
+from common.constants import COMMAND_CANCEL, COMMAND_CATEGORIES
 from common.utils import (
     get_user_id,
     cancel,
@@ -27,7 +27,7 @@ from db import CategoryModel
 from db.base import async_session
 
 
-class Category:
+class Categories:
 
     STATE__CREATE = 0
     STATE__SHOW_CATEGORY_ACTIONS = 1
@@ -58,7 +58,7 @@ class Category:
     def handler(cls):
 
         return ConversationHandler(
-            entry_points=[CommandHandler(cls.categories.__name__, cls.categories)],
+            entry_points=[CommandHandler(COMMAND_CATEGORIES, cls.entrypoint)],
             states={
                 cls.STATE__CREATE: [
                     MessageHandler(filters.Regex(rf'^/{COMMAND_CANCEL}$'), close),
@@ -77,7 +77,7 @@ class Category:
         )
 
     @classmethod
-    async def categories(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    async def entrypoint(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         user_id = await get_user_id(update, context)
 
         async with async_session() as session:
@@ -146,7 +146,7 @@ class Category:
             error_text.append(f'Следующие категории уже есть: <b>{", ".join(titles_in_existing_titles_lower)}</b>')
         if error_text:
             await send_response(update=update, context=context, response='\n'.join(error_text))
-            return await cls.categories(update, context)
+            return await cls.entrypoint(update, context)
 
         categories = [CategoryModel(title=title, user_id=user_id) for title in titles]
 
@@ -161,6 +161,8 @@ class Category:
                     context=context,
                     response=f'Категория <b>{bad_category}</b> уже есть',
                 )
+                await flush_user_data(update, context)
+                return await cls.entrypoint(update, context)
 
         await flush_user_data(update, context)
         if len(categories) == 1:
@@ -169,7 +171,7 @@ class Category:
             categories_list_str = ', '.join(titles)
             text = f'Категории <b>{categories_list_str}</b> добавлены'
         await send_response(update=update, context=context, response=text)
-        return await cls.categories(update, context)
+        return await cls.entrypoint(update, context)
 
     @classmethod
     async def show_category_actions(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -198,14 +200,14 @@ class Category:
         context.user_data['category_disabled'] = category_disabled
 
         if category_disabled:
-            hide_show_button = InlineKeyboardButton('Активировать', callback_data=cls.ACTION__ACTIVATE)
+            hide_show_button = InlineKeyboardButton(cls.ACTION__ACTIVATE, callback_data=cls.ACTION__ACTIVATE)
         else:
-            hide_show_button = InlineKeyboardButton('Скрыть', callback_data=cls.ACTION__HIDE)
+            hide_show_button = InlineKeyboardButton(cls.ACTION__HIDE, callback_data=cls.ACTION__HIDE)
 
         reply_markup = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton('Удалить', callback_data=cls.ACTION__DELETE),
+                    InlineKeyboardButton(cls.ACTION__DELETE, callback_data=cls.ACTION__DELETE),
                     hide_show_button,
                     InlineKeyboardButton(cls.ACTION__BACK, callback_data=cls.ACTION__BACK),
                 ],
@@ -234,7 +236,7 @@ class Category:
 
         if query_data == cls.ACTION__BACK:
             await delete_last_message(update)
-            return await cls.categories(update, context)
+            return await cls.entrypoint(update, context)
 
         if query_data == cls.ACTION__CLOSE:
             await delete_last_message(update)
@@ -254,7 +256,7 @@ class Category:
                     'В данный момент она скрыта и не отображается при добавлении новых записей'
                 )
             else:
-                keyboard[1].insert(0, InlineKeyboardButton('Скрыть', callback_data=cls.ACTION__HIDE))
+                keyboard[1].insert(0, InlineKeyboardButton(cls.ACTION__HIDE, callback_data=cls.ACTION__HIDE))
                 text = (
                     f'Вы уверены, что хотите удалить категорию <b>{category_title}</b>? '
                     'Это удалит также и все записи по ней. '
@@ -298,7 +300,7 @@ class Category:
             return await cls.delete(update, context)
         if query_data == cls.ACTION__BACK:
             await delete_last_message(update)
-            return await cls.categories(update, context)
+            return await cls.entrypoint(update, context)
         if query_data == cls.ACTION__CLOSE:
             await delete_last_message(update)
             return ConversationHandler.END
@@ -315,7 +317,7 @@ class Category:
 
         await flush_user_data(update, context)
         await send_response(update=update, context=context, response=f'Категория <b>{category_title}</b> удалена')
-        return await cls.categories(update, context)
+        return await cls.entrypoint(update, context)
 
     @classmethod
     async def activate(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -330,7 +332,7 @@ class Category:
 
         await flush_user_data(update, context)
         await send_response(update=update, context=context, response=f'Категория <b>{category_title}</b> активирована')
-        return await cls.categories(update, context)
+        return await cls.entrypoint(update, context)
 
     @classmethod
     async def hide(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -345,36 +347,40 @@ class Category:
 
         await flush_user_data(update, context)
         await send_response(update=update, context=context, response=f'Категория <b>{category_title}</b> скрыта')
-        return await cls.categories(update, context)
+        return await cls.entrypoint(update, context)
 
     @classmethod
     async def edit(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         category_id = context.user_data['category_id']
-        old_category_title = context.user_data['category_title']
-        new_category_title = update.message.text.capitalize()
+        old_title = context.user_data['category_title']
+        new_title = update.message.text.capitalize()
         existing_titles_lower = (c.title.lower() for c in context.user_data['categories'].values())
 
-        if new_category_title.startswith('/'):
+        if new_title.startswith('/'):
             await send_response(update=update, context=context, response='Название нельзя начинать с /')
-            return await cls.categories(update, context)
-        elif new_category_title == old_category_title:
+            return await cls.entrypoint(update, context)
+        elif new_title == old_title:
             await send_response(update=update, context=context, response='Название не отличается от предыдущего')
-            return await cls.categories(update, context)
-        elif new_category_title.capitalize() in cls.BAD_WORDS:
+            return await cls.entrypoint(update, context)
+        elif new_title.capitalize() in cls.BAD_WORDS:
             await send_response(update=update, context=context, response='Такое название нельзя использовать')
-            return await cls.categories(update, context)
-        elif new_category_title.lower() in existing_titles_lower:
+            return await cls.entrypoint(update, context)
+        elif new_title.lower() in existing_titles_lower:
             await send_response(
-                update=update, context=context, response=f'Категория <b>{new_category_title}</b> уже есть',
+                update=update, context=context, response=f'Категория <b>{new_title}</b> уже есть',
             )
-            return await cls.categories(update, context)
+            return await cls.entrypoint(update, context)
 
         async with async_session() as session:
             category = (await session.execute(select(CategoryModel).filter_by(id=category_id))).scalars().one()
-            category.title = new_category_title
+            category.title = new_title
             session.add(category)
             await session.commit()
 
         await flush_user_data(update, context)
-        await send_response(update=update, context=context, response='Успех')
-        return await cls.categories(update, context)
+        await send_response(
+            update=update,
+            context=context,
+            response=f'Категория <b>{old_title}</b> теперь имеет имя <b>{new_title}</b>',
+        )
+        return await cls.entrypoint(update, context)
