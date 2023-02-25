@@ -19,7 +19,9 @@ from common.utils import (
     send_response,
     edit_last_message,
     delete_last_message,
-    close, sep_titles,
+    close,
+    sep_titles,
+    flush_user_data,
 )
 from db import CategoryModel
 from db.base import async_session
@@ -128,15 +130,23 @@ class Category:
         titles = sep_titles(update.message.text)
         existing_titles_lower = []
         if 'categories' in context.user_data:
-            existing_titles_lower = (c.title.lower() for c in context.user_data['categories'].values())
+            existing_titles_lower = [c.title.lower() for c in context.user_data['categories'].values()]
 
+        titles_in_bad_words = []
+        titles_in_existing_titles_lower = []
+        error_text = []
         for title in titles:
             if title.capitalize() in cls.BAD_WORDS:
-                await send_response(update=update, context=context, response='Такое название нельзя использовать')
-                return await cls.categories(update, context)
+                titles_in_bad_words.append(title)
             elif title.lower() in existing_titles_lower:
-                await send_response(update=update, context=context, response=f'Категория <b>{title}</b> уже есть')
-                return await cls.categories(update, context)
+                titles_in_existing_titles_lower.append(title)
+        if titles_in_bad_words:
+            error_text.append(f'Следующие названия нельзя использовать: <b>{", ".join(titles_in_bad_words)}</b>')
+        if titles_in_existing_titles_lower:
+            error_text.append(f'Следующие категории уже есть: <b>{", ".join(titles_in_existing_titles_lower)}</b>')
+        if error_text:
+            await send_response(update=update, context=context, response='\n'.join(error_text))
+            return await cls.categories(update, context)
 
         categories = [CategoryModel(title=title, user_id=user_id) for title in titles]
 
@@ -152,7 +162,13 @@ class Category:
                     response=f'Категория <b>{bad_category}</b> уже есть',
                 )
 
-        cls._flush_categories(context)
+        await flush_user_data(update, context)
+        if len(categories) == 1:
+            text = f'Категория <b>{titles[0]}</b> добавлена'
+        else:
+            categories_list_str = ', '.join(titles)
+            text = f'Категории <b>{categories_list_str}</b> добавлены'
+        await send_response(update=update, context=context, response=text)
         return await cls.categories(update, context)
 
     @classmethod
@@ -162,7 +178,6 @@ class Category:
         query_data = update.callback_query.data
         if query_data == cls.ACTION__CLOSE:
             await close(update, context)
-            cls._flush_categories(context)
             return ConversationHandler.END
         if query_data == cls.ACTION__ADD:
             text = (
@@ -223,7 +238,6 @@ class Category:
 
         if query_data == cls.ACTION__CLOSE:
             await delete_last_message(update)
-            cls._flush_categories(context)
             return ConversationHandler.END
 
         if query_data == cls.ACTION__DELETE:
@@ -287,7 +301,6 @@ class Category:
             return await cls.categories(update, context)
         if query_data == cls.ACTION__CLOSE:
             await delete_last_message(update)
-            cls._flush_categories(context)
             return ConversationHandler.END
 
     @classmethod
@@ -300,7 +313,7 @@ class Category:
             await session.delete(category)
             await session.commit()
 
-        cls._flush_categories(context)
+        await flush_user_data(update, context)
         await send_response(update=update, context=context, response=f'Категория <b>{category_title}</b> удалена')
         return await cls.categories(update, context)
 
@@ -315,9 +328,7 @@ class Category:
             session.add(category)
             await session.commit()
 
-        cls._flush_categories(context)
-
-        # await edit_last_message(update, f'Категория <b>{category_title}</b> активирована')
+        await flush_user_data(update, context)
         await send_response(update=update, context=context, response=f'Категория <b>{category_title}</b> активирована')
         return await cls.categories(update, context)
 
@@ -332,7 +343,7 @@ class Category:
             session.add(category)
             await session.commit()
 
-        cls._flush_categories(context)
+        await flush_user_data(update, context)
         await send_response(update=update, context=context, response=f'Категория <b>{category_title}</b> скрыта')
         return await cls.categories(update, context)
 
@@ -364,12 +375,6 @@ class Category:
             session.add(category)
             await session.commit()
 
-        cls._flush_categories(context)
+        await flush_user_data(update, context)
         await send_response(update=update, context=context, response='Успех')
         return await cls.categories(update, context)
-
-    @staticmethod
-    def _flush_categories(context: ContextTypes.DEFAULT_TYPE):
-        old_categories_list = context.user_data.get('categories')
-        if old_categories_list:
-            del context.user_data['categories']

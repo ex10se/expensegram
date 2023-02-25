@@ -132,9 +132,10 @@ async def close(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-def flush_user_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = get_user_id(update, context)
-    context.user_data = {'user_id': user_id}
+async def flush_user_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = await get_user_id(update, context)
+    context.user_data.clear()
+    context.user_data['user_id'] = user_id
 
 
 def user_amount_to_db_amount(user_amount: str) -> Decimal:
@@ -145,7 +146,11 @@ def user_amount_to_db_amount(user_amount: str) -> Decimal:
 
 
 def sep_titles(message: str) -> list:
-    return list(set(message.replace('/', '').replace('\n', ', ').strip().split(', ')))
+    titles = []
+    for title in message.replace('/', '').replace('\n', ', ').strip().split(', '):
+        if title not in titles:
+            titles.append(title)
+    return titles
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

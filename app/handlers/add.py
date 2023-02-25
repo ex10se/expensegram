@@ -1,7 +1,8 @@
 from decimal import Decimal
 from typing import Tuple, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, Message
 from telegram.ext import (
     ConversationHandler,
@@ -17,9 +18,11 @@ from common.utils import (
     cancel,
     send_response,
     delete_last_message,
-    get_user_id, user_amount_to_db_amount, edit_last_message, flush_user_data,
+    get_user_id,
+    user_amount_to_db_amount,
+    edit_last_message,
 )
-from db import CategoryModel, AccountModel, EntryModel
+from db import CategoryModel, AccountModel, EntryModel, TransferModel
 from db.base import async_session
 
 
@@ -28,7 +31,10 @@ class AddConversation:
     STAGE__CREATE_ENTRY__CATEGORY_ACCOUNT_CHECK = 0
     STAGE__CREATE_ENTRY__CHOOSE_ACCOUNT = 1
     STAGE__CREATE_ENTRY__ENTER_AMOUNT = 2
-    STAGE__ADD_ENTRY = 3
+    STAGE__CREATE_ENTRY = 3
+    STAGE__CREATE_TRANSFER__CHOOSE_ACCOUNT_TO = 4
+    STAGE__CREATE_TRANSFER__ENTER_AMOUNT = 5
+    STAGE__CREATE_TRANSFER = 6
 
     STAGE__CREATE_CATEGORY = 20
 
@@ -56,13 +62,14 @@ class AddConversation:
             entry_points=[CommandHandler(COMMAND_ADD, cls.entrypoint)],
             states={
                 cls.STAGE__CREATE_ENTRY__CATEGORY_ACCOUNT_CHECK: [
+                    CallbackQueryHandler(cls.create_transfer__choose_account_from, pattern=cls.ACTION__TRANSFER),
                     CallbackQueryHandler(cls.create_entry__remember_entry_type),
                 ],
                 cls.STAGE__CREATE_ENTRY__CHOOSE_ACCOUNT: [CallbackQueryHandler(cls.create_entry__choose_account)],
                 cls.STAGE__CREATE_ENTRY__ENTER_AMOUNT: [CallbackQueryHandler(cls.create_entry__enter_amount)],
-                cls.STAGE__ADD_ENTRY: [
+                cls.STAGE__CREATE_ENTRY: [
                     MessageHandler(filters.Regex(rf'^/{COMMAND_CANCEL}$'), cancel),
-                    MessageHandler(filters.TEXT, cls.add_entry),
+                    MessageHandler(filters.TEXT, cls.create_entry),
                 ],
                 cls.STAGE__CREATE_CATEGORY: [
                     MessageHandler(filters.Regex(rf'^/{COMMAND_CANCEL}$'), cancel),
@@ -76,6 +83,16 @@ class AddConversation:
                     MessageHandler(filters.Regex(rf'^/{COMMAND_CANCEL}$'), cancel),
                     MessageHandler(filters.TEXT, cls.create_account),
                 ],
+                cls.STAGE__CREATE_TRANSFER__CHOOSE_ACCOUNT_TO: [
+                    CallbackQueryHandler(cls.create_transfer__choose_account_to),
+                ],
+                cls.STAGE__CREATE_TRANSFER__ENTER_AMOUNT: [
+                    CallbackQueryHandler(cls.create_transfer__enter_amount),
+                ],
+                cls.STAGE__CREATE_TRANSFER: [
+                    MessageHandler(filters.Regex(rf'^/{COMMAND_CANCEL}$'), cancel),
+                    MessageHandler(filters.TEXT, cls.create_transfer),
+                ],
             },
             fallbacks=[CommandHandler(constants.COMMAND_CANCEL, cancel)],
             allow_reentry=True,
@@ -83,11 +100,21 @@ class AddConversation:
 
     @classmethod
     async def entrypoint(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        user_id = await get_user_id(update, context)
+
+        upper_buttons = [
+            InlineKeyboardButton('Закрыть', callback_data=cls.ACTION__CLOSE),
+        ]
+
+        async with async_session() as session:
+            accounts_count = (
+                await session.execute(select(func.count()).select_from(AccountModel).filter_by(user_id=user_id))
+            ).scalar_one()
+        if accounts_count >= 2:
+            upper_buttons.insert(0, InlineKeyboardButton('Перевод', callback_data=cls.ACTION__TRANSFER))
+
         reply_markup = InlineKeyboardMarkup([
-            [
-                # InlineKeyboardButton('Перевод', callback_data=cls.ACTION__TRANSFER),
-                InlineKeyboardButton('Закрыть', callback_data=cls.ACTION__CLOSE),
-            ],
+            upper_buttons,
             [
                 InlineKeyboardButton('Доход', callback_data=cls.ACTION__INCOME),
                 InlineKeyboardButton('Расход', callback_data=cls.ACTION__EXPENSE),
@@ -256,10 +283,10 @@ class AddConversation:
             ),
         )
 
-        return cls.STAGE__ADD_ENTRY
+        return cls.STAGE__CREATE_ENTRY
 
     @classmethod
-    async def add_entry(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    async def create_entry(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         amount, title = cls._prepare_entry_amount(update.message.text)
         if amount is None:
             await send_response(update=update, context=context, response='Неверный формат ввода')
@@ -288,7 +315,6 @@ class AddConversation:
                 f'составляет {account.amount} {account.currency}'
             ),
         )
-        flush_user_data(update, context)
         return ConversationHandler.END
 
     @classmethod
@@ -326,8 +352,15 @@ class AddConversation:
             currency=currency,
         )
         async with async_session() as session:
-            session.add(account)
-            await session.commit()
+            try:
+                session.add(account)
+                await session.commit()
+            except IntegrityError:
+                await send_response(
+                    update=update,
+                    context=context,
+                    response=f'Счёт <b>{title}</b> уже есть',
+                )
 
         context.user_data['account_id'] = account.id
 
@@ -348,11 +381,147 @@ class AddConversation:
 
         category = CategoryModel(title=title, user_id=user_id)
         async with async_session() as session:
-            session.add(category)
-            await session.commit()
+            try:
+                session.add(category)
+                await session.commit()
+            except IntegrityError:
+                await send_response(
+                    update=update,
+                    context=context,
+                    response=f'Категория <b>{title}</b> уже есть',
+                )
 
         await send_response(update=update, context=context, response=f'Категория <b>{category.title}</b> создана')
         return await cls.create_entry__category_account_check(update, context)
+
+    @classmethod
+    async def create_transfer__choose_account_from(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        user_id = await get_user_id(update, context)
+        await update.callback_query.answer()
+
+        async with async_session() as session:
+            accounts = (await session.execute(select(AccountModel).filter_by(user_id=user_id))).scalars().all()
+        accounts = {account.id: account for account in accounts}
+        context.user_data['accounts'] = accounts
+        # распределяем кнопки по 2 в ряд
+        keyboard_map = []
+        for i, account in enumerate(accounts.values()):
+            button = InlineKeyboardButton(account.title, callback_data=account.id)
+            if not i % 2:
+                keyboard_map.append([button])
+            else:
+                keyboard_map[-1].append(button)
+
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton('Закрыть', callback_data=cls.ACTION__CLOSE)],
+            *keyboard_map,
+        ])
+        await edit_last_message(
+            update=update,
+            text='Выберите счёт списания',
+            reply_markup=reply_markup,
+        )
+        return cls.STAGE__CREATE_TRANSFER__CHOOSE_ACCOUNT_TO
+
+    @classmethod
+    async def create_transfer__choose_account_to(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        await update.callback_query.answer()
+
+        query_data = update.callback_query.data
+        if query_data == cls.ACTION__CLOSE:
+            await delete_last_message(update)
+            return ConversationHandler.END
+
+        account_id_from = int(query_data)
+        context.user_data['account_id_from'] = account_id_from
+        accounts = {k: v for k, v in context.user_data['accounts'].items() if k != account_id_from}
+
+        # распределяем кнопки по 2 в ряд
+        keyboard_map = []
+        for i, account in enumerate(accounts.values()):
+            button = InlineKeyboardButton(account.title, callback_data=account.id)
+            if not i % 2:
+                keyboard_map.append([button])
+            else:
+                keyboard_map[-1].append(button)
+
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton('Закрыть', callback_data=cls.ACTION__CLOSE)],
+            *keyboard_map,
+        ])
+        await edit_last_message(
+            update=update,
+            text='Выберите счёт зачисления',
+            reply_markup=reply_markup,
+        )
+        return cls.STAGE__CREATE_TRANSFER__ENTER_AMOUNT
+
+    @classmethod
+    async def create_transfer__enter_amount(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        await update.callback_query.answer()
+
+        query_data = update.callback_query.data
+        if query_data == cls.ACTION__CLOSE:
+            await delete_last_message(update)
+            return ConversationHandler.END
+
+        context.user_data['account_id_to'] = int(query_data)
+
+        account_title_from = context.user_data['accounts'][context.user_data['account_id_from']].title
+        account_title_to = context.user_data['accounts'][context.user_data['account_id_to']].title
+
+        text = (
+            f'Введите сумму списания со счёта <b>{account_title_from}</b> '
+            f'(и, если отличается, сумму начисления на счёт <b>{account_title_to}</b>) в следующем формате:\n\n'
+            '    <code>100</code>\n'
+            '    <code>10к 131,55</code>\n'
+            '    <code>200k 29.8kk</code>\n\n'
+            '(/cancel для отмены)'
+        )
+        await edit_last_message(
+            update=update,
+            text=text,
+        )
+        return cls.STAGE__CREATE_TRANSFER
+
+    @classmethod
+    async def create_transfer(cls, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        amount_from, amount_to = cls._prepare_transfer_amount(update.message.text)
+        if amount_from is None or amount_to is None:
+            await send_response(update=update, context=context, response='Неверный формат ввода')
+            return await cls.entrypoint(update, context)
+
+        user_id = await get_user_id(update, context)
+        account_id_from = context.user_data['account_id_from']
+        account_id_to = context.user_data['account_id_to']
+        account_from = context.user_data['accounts'][account_id_from]
+        account_to = context.user_data['accounts'][account_id_to]
+
+        transfer = TransferModel(
+            amount_from=amount_from,
+            amount_to=amount_to,
+            account_from_id=account_id_from,
+            account_to_id=account_id_to,
+            user_id=user_id,
+        )
+        async with async_session() as session:
+            account_from.amount -= amount_from
+            account_to.amount += amount_to
+            session.add(account_from)
+            session.add(account_to)
+            session.add(transfer)
+            await session.commit()
+
+        await send_response(
+            update=update,
+            context=context,
+            response=(
+                'Запись добавлена, теперь баланс составляет\n'
+                f'- <b>{account_from.title}</b> {account_from.amount} {account_from.currency}\n'
+                f'- <b>{account_to.title}</b> {account_to.amount} {account_to.currency}'
+            ),
+        )
+        return ConversationHandler.END
 
     @staticmethod
     def _prepare_entry_amount(amount_str: str) -> Tuple[Optional[Decimal], Optional[str]]:
@@ -365,3 +534,15 @@ class AddConversation:
             amount = amount_str
         amount = amount.strip().replace('-', '')
         return user_amount_to_db_amount(amount), title
+
+    @staticmethod
+    def _prepare_transfer_amount(amount_str: str) -> Tuple[Optional[Decimal], Optional[Decimal]]:
+        if amount_str.count(' ') == 1:
+            amount_from, amount_to = amount_str.split(' ', 1)
+        elif amount_str.count('\n') == 1:
+            amount_from, amount_to = amount_str.split('\n', 1)
+        else:
+            amount_from, amount_to = amount_str, amount_str
+        amount_from = amount_from.strip().replace('-', '')
+        amount_to = amount_to.strip().replace('-', '')
+        return user_amount_to_db_amount(amount_from), user_amount_to_db_amount(amount_to)
